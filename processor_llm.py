@@ -1,44 +1,63 @@
+import os
+import re
+import logging
 from dotenv import load_dotenv
 from groq import Groq
-import json
-import re
 
+# Load environment variables from .env file
+load_dotenv(override=True)
 
-load_dotenv()
+# Fetch API Key securely
+api_key = os.getenv("GROQ_API_KEY")
 
-groq = Groq()
+if not api_key:
+    raise ValueError("❌ GROQ_API_KEY is missing. Please check your .env file!")
+
+# Initialize Groq client with API Key
+groq = Groq(api_key=api_key)
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def classify_with_llm(log_msg):
     """
-    Generate a variant of the input sentence. For example,
-    If input sentence is "User session timed out unexpectedly, user ID: 9250.",
-    variant would be "Session timed out for user 9251"
+    Classifies a log message into one of the predefined categories using Groq's LLM.
+
+    Categories:
+    - Workflow Error
+    - Deprecation Warning
+    - Unclassified (fallback if no match found)
+
+    Parameters:
+    - log_msg (str): The log message to classify.
+
+    Returns:
+    - category (str): The predicted category.
     """
+
     prompt = f'''Classify the log message into one of these categories: 
     (1) Workflow Error, (2) Deprecation Warning.
-    If you can't figure out a category, use "Unclassified".
+    If you can't determine a category, return "Unclassified".
     Put the category inside <category> </category> tags. 
     Log message: {log_msg}'''
 
-    chat_completion = groq.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}],
-        # model="llama-3.3-70b-versatile",
-        model="deepseek-r1-distill-llama-70b",
-        temperature=0.5
-    )
+    try:
+        # Send request to LLM
+        chat_completion = groq.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="deepseek-r1-distill-llama-70b",  
+            temperature=0.5
+        )
 
-    content = chat_completion.choices[0].message.content
-    match = re.search(r'<category>(.*)<\/category>', content, flags=re.DOTALL)
-    category = "Unclassified"
-    if match:
-        category = match.group(1)
+        # Extract the category from the response
+        content = chat_completion.choices[0].message.content
+        match = re.search(r'<category>(.*?)<\/category>', content, flags=re.DOTALL)
+        category = match.group(1) if match else "Unclassified"
 
-    return category
+        logger.info(f"Log: {log_msg} | Classified as: {category}")
+        return category
 
-
-if __name__ == "__main__":
-    print(classify_with_llm(
-        "Case escalation for ticket ID 7324 failed because the assigned support agent is no longer active."))
-    print(classify_with_llm(
-        "The 'ReportGenerator' module will be retired in version 4.0. Please migrate to the 'AdvancedAnalyticsSuite' by Dec 2025"))
-    print(classify_with_llm("System reboot initiated by user 12345."))
+    except Exception as e:
+        logger.error(f"Error in classify_with_llm: {str(e)}")
+        return "Unclassified"

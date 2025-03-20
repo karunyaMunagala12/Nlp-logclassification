@@ -1,19 +1,49 @@
+import os
 import joblib
+import logging
 from sentence_transformers import SentenceTransformer
 
-model_embedding = SentenceTransformer('all-MiniLM-L6-v2')  # Lightweight embedding model
-model_classification = joblib.load("models/log_classifier.joblib")
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# Load Embedding Model
+model_embedding = SentenceTransformer('all-MiniLM-L6-v2')  # Lightweight embedding model
+
+# Check if the classifier model exists
+model_path = "models/log_classifier.joblib"
+
+if not os.path.exists(model_path):
+    raise FileNotFoundError(f"❌ Model file '{model_path}' not found! Make sure it exists.")
+
+# Load Model
+model_classification = joblib.load(model_path)
 
 def classify_with_bert(log_message):
-    embeddings = model_embedding.encode([log_message])
-    probabilities = model_classification.predict_proba(embeddings)[0]
-    if max(probabilities) < 0.5:
-        return "Unclassified"
-    predicted_label = model_classification.predict(embeddings)[0]
-    
-    return predicted_label
+    """
+    Classifies a log message using a pre-trained BERT-based model.
 
+    Parameters:
+    - log_message (str): The log message to classify.
+
+    Returns:
+    - predicted_label (str): The predicted category or "Unclassified" if confidence is low.
+    """
+    try:
+        embeddings = model_embedding.encode([log_message])
+        probabilities = model_classification.predict_proba(embeddings)[0]
+
+        if max(probabilities) < 0.5:
+            return "Unclassified"
+        
+        predicted_label = model_classification.predict(embeddings)[0]
+        logger.info(f"Log: {log_message} | Predicted: {predicted_label}")
+        
+        return predicted_label
+
+    except Exception as e:
+        logger.error(f"❌ Error in classify_with_bert: {str(e)}")
+        return "Unclassified"
 
 if __name__ == "__main__":
     logs = [
